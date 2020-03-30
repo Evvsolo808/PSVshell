@@ -29,6 +29,8 @@ typedef struct psvs_memory_t {
     uint32_t cdram_total;
     uint32_t phycont_free;
     uint32_t phycont_total;
+	uint32_t cdialog_free;
+	uint32_t cdialog_total;
     bool _has_changed;
 } psvs_memory_t;
 

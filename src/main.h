@@ -27,6 +27,8 @@
 
 extern SceUID g_pid;
 extern char g_titleid[32];
+extern uint32_t g_sysroot_cas_shift;
+extern uint32_t g_sysroot_cas;
 extern bool g_is_in_pspemu;
 extern bool g_is_dolce;
 

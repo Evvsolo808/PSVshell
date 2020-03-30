@@ -1,11 +1,14 @@
 #include <vitasdkkern.h>
 #include <taihen.h>
 #include <stdbool.h>
+#include <psp2kern/io/fcntl.h> 
+#include <string.h>
 
 #include "main.h"
 
 SceUInt32 ksceKernelGetProcessTimeLowCore();
 SceUInt32 ksceKernelSysrootGetCurrentAddressSpaceCB();
+SceUInt32 ksceKernelIsGameBudget();
 
 #define SECOND 1000000
 
@@ -113,12 +116,12 @@ void psvs_perf_poll_cpu() {
 }
 
 void psvs_perf_poll_memory() {
-    // Takes caller's context into account
-    SceSysmemAddressSpaceInfo info;
-    uint32_t sysroot_cas = ksceKernelSysrootGetCurrentAddressSpaceCB();
+	SceSysmemAddressSpaceInfo info;
+	g_sysroot_cas = ksceKernelSysrootGetCurrentAddressSpaceCB();
+	g_sysroot_cas += g_sysroot_cas_shift;
 
-    if (*(uint32_t *)(sysroot_cas + 328) > 0) {
-        SceSysmemForKernel_0x3650963F(*(uint32_t *)(sysroot_cas + 328), &info);
+    if (*(uint32_t *)(g_sysroot_cas + 328) > 0) {
+        SceSysmemForKernel_0x3650963F(*(uint32_t *)(g_sysroot_cas + 328), &info);
         PSVS_CHECK_ASSIGN(g_perf_memusage, main_free, info.free);
         PSVS_CHECK_ASSIGN(g_perf_memusage, main_total, info.total);
     } else {
@@ -126,8 +129,8 @@ void psvs_perf_poll_memory() {
         PSVS_CHECK_ASSIGN(g_perf_memusage, main_total, 0);
     }
 
-    if (*(uint32_t *)(sysroot_cas + 332) > 0) {
-        SceSysmemForKernel_0x3650963F(*(uint32_t *)(sysroot_cas + 332), &info);
+    if (*(uint32_t *)(g_sysroot_cas + 332) > 0) {
+        SceSysmemForKernel_0x3650963F(*(uint32_t *)(g_sysroot_cas + 332), &info);
         PSVS_CHECK_ASSIGN(g_perf_memusage, cdram_free, info.free);
         PSVS_CHECK_ASSIGN(g_perf_memusage, cdram_total, info.total);
     } else {
@@ -135,14 +138,24 @@ void psvs_perf_poll_memory() {
         PSVS_CHECK_ASSIGN(g_perf_memusage, cdram_total, 0);
     }
 
-    if (*(uint32_t *)(sysroot_cas + 316) > 0) {
-        SceSysmemForKernel_0x3650963F(*(uint32_t *)(sysroot_cas + 316), &info);
+    if (*(uint32_t *)(g_sysroot_cas + 316) > 0) {
+        SceSysmemForKernel_0x3650963F(*(uint32_t *)(g_sysroot_cas + 316), &info);
         PSVS_CHECK_ASSIGN(g_perf_memusage, phycont_free, info.free);
         PSVS_CHECK_ASSIGN(g_perf_memusage, phycont_total, info.total);
     } else {
         PSVS_CHECK_ASSIGN(g_perf_memusage, phycont_free, 0);
         PSVS_CHECK_ASSIGN(g_perf_memusage, phycont_total, 0);
     }
+
+	if (*(uint32_t *)(g_sysroot_cas + 324) > 0) {
+		SceSysmemForKernel_0x3650963F(*(uint32_t *)(g_sysroot_cas + 324), &info);
+		PSVS_CHECK_ASSIGN(g_perf_memusage, cdialog_free, info.free);
+		PSVS_CHECK_ASSIGN(g_perf_memusage, cdialog_total, info.total);
+	}
+	else {
+		PSVS_CHECK_ASSIGN(g_perf_memusage, cdialog_free, 0);
+		PSVS_CHECK_ASSIGN(g_perf_memusage, cdialog_total, 0);
+	}
 }
 
 void psvs_perf_poll_batt() {

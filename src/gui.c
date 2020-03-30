@@ -81,6 +81,7 @@ void psvs_gui_input_check(uint32_t buttons) {
             g_gui_mode_changed = true;
         } else if (buttons_new & SCE_CTRL_DOWN && g_gui_mode > 0) {
             g_gui_mode--; // Hide
+			g_sysroot_cas_shift = 0;
             g_gui_mode_changed = true;
         }
     }
@@ -92,6 +93,14 @@ void psvs_gui_input_check(uint32_t buttons) {
         } else if (buttons_new & SCE_CTRL_UP && g_gui_menu_control > 0) {
             g_gui_menu_control--;
         }
+
+		//Change sysroot cas shift
+		if (buttons_new & SCE_CTRL_CIRCLE && g_sysroot_cas_shift != 0x2000) {
+			g_sysroot_cas_shift += 0x1000;
+		}
+		else if (buttons_new & SCE_CTRL_SQUARE && g_sysroot_cas_shift != 0x0) {
+			g_sysroot_cas_shift -= 0x1000;
+		}
 
         // Profile label
         if (g_gui_menu_control == PSVS_GUI_MENUCTRL_PROFILE) {
@@ -231,8 +240,8 @@ static void _psvs_gui_dd_prchar(const char character, int x, int y) {
 }
 
 void psvs_gui_dd_fps() {
-    char buf[4] = "";
-    snprintf(buf, 4, "%d", psvs_perf_get_fps());
+    char buf[10] = "";
+    snprintf(buf, 10, "%d", psvs_perf_get_fps());
     size_t len = strlen(buf);
 
     for (int i = 0; i < len; i++) {
@@ -518,6 +527,8 @@ void psvs_gui_draw_template() {
     psvs_gui_printf(GUI_ANCHOR_LX(10, 0),  GUI_ANCHOR_TY(56, 3), "MEM:");
     psvs_gui_printf(GUI_ANCHOR_LX(10, 0),  GUI_ANCHOR_TY(56, 4), "VMEM:");
     psvs_gui_printf(GUI_ANCHOR_LX(10, 0),  GUI_ANCHOR_TY(56, 5), "PHY:");
+	psvs_gui_printf(GUI_ANCHOR_LX(10, 0), GUI_ANCHOR_TY(56, 6), "CDLG:");
+	psvs_gui_printf(GUI_ANCHOR_LX(10, 0), GUI_ANCHOR_TY(56, 7), "CAS CB Shift:");
 
     // Menu
     psvs_gui_printf(GUI_ANCHOR_CX(15),     GUI_ANCHOR_BY(10, 5), "CPU [         ]");
@@ -627,6 +638,7 @@ static void _psvs_gui_draw_memory_usage(int line, int total, int free, int limit
                         psvs_gui_value_from_size(free));
         psvs_gui_set_text_color(255, 255, 255, 255);
     }
+	psvs_gui_printf(GUI_ANCHOR_RX(10, 6), GUI_ANCHOR_TY(56, 7), "0x%x", g_sysroot_cas_shift);
 }
 
 void psvs_gui_draw_memory_section() {
@@ -638,8 +650,9 @@ void psvs_gui_draw_memory_section() {
     g_gui_lazydraw_memusage = false;
 
     _psvs_gui_draw_memory_usage(3, mem->main_total, mem->main_free, 512 * 1024 * 1024);
-    _psvs_gui_draw_memory_usage(4, mem->cdram_total, mem->cdram_free, 128 * 1024 * 1024);
+    _psvs_gui_draw_memory_usage(4, mem->cdram_total, mem->cdram_free, 112 * 1024 * 1024);
     _psvs_gui_draw_memory_usage(5, mem->phycont_total, mem->phycont_free, 26 * 1024 * 1024);
+	_psvs_gui_draw_memory_usage(6, mem->cdialog_total, mem->cdialog_free, 9 * 1024 * 1024);
 }
 
 static void _psvs_gui_draw_menu_item(int lines, int clock, psvs_gui_menu_control_t menuctrl) {

@@ -12,6 +12,7 @@
 
 int module_get_offset(SceUID pid, SceUID modid, int segidx, size_t offset, uintptr_t *addr);
 int module_get_export_func(SceUID pid, const char *modname, uint32_t libnid, uint32_t funcnid, uintptr_t *func);
+SceUInt32 ksceKernelSysrootGetCurrentAddressSpaceCB();
 bool ksceAppMgrIsExclusiveProcessRunning();
 bool ksceSblAimgrIsGenuineDolce();
 
@@ -29,6 +30,8 @@ SceUID g_pid = INVALID_PID;
 char g_titleid[32] = "";
 bool g_is_in_pspemu = false;
 bool g_is_dolce = false;
+uint32_t g_sysroot_cas_shift = 0;
+uint32_t g_sysroot_cas = 0;
 
 SceUID (*_ksceKernelGetProcessMainModule)(SceUID pid);
 int (*_ksceKernelGetModuleInfo)(SceUID pid, SceUID modid, SceKernelModuleInfo *info);
@@ -62,21 +65,18 @@ static void psvs_input_check(SceCtrlData *pad_data, int count) {
 }
 
 int ksceDisplaySetFrameBufInternal_patched(int head, int index, const SceDisplayFrameBuf *pParam, int sync) {
-    if (!head || !pParam)
-        goto DISPLAY_HOOK_RET;
+	if (!head || !pParam)
+		goto DISPLAY_HOOK_RET;
 
-    if (g_is_in_pspemu)
-        goto DISPLAY_HOOK_RET;
+	if (g_is_in_pspemu)
+		goto DISPLAY_HOOK_RET;
 
-    if (index && ksceAppMgrIsExclusiveProcessRunning())
-        goto DISPLAY_HOOK_RET; // Do not draw over SceShell overlay
+	psvs_gui_mode_t mode = psvs_gui_get_mode();
+	if (mode == PSVS_GUI_MODE_HIDDEN)
+		goto DISPLAY_HOOK_RET;
 
-    psvs_gui_mode_t mode = psvs_gui_get_mode();
-    if (mode == PSVS_GUI_MODE_HIDDEN)
-        goto DISPLAY_HOOK_RET;
-
-    psvs_perf_calc_fps();
-    psvs_gui_set_framebuf(pParam);
+	psvs_perf_calc_fps();
+	psvs_gui_set_framebuf(pParam);
 
     if (mode == PSVS_GUI_MODE_FULL) {
         psvs_perf_poll_memory();
@@ -147,64 +147,57 @@ int ksceKernelInvokeProcEventHandler_patched(int pid, int ev, int a3, int a4, in
     if (ret < 0)
         goto PROCEVENT_EXIT;
 
-    switch (ev) {
-        case 1: // startup
-        case 5: // resume
-            // Ignore startup events if exclusive proc is already running
-            if (ksceAppMgrIsExclusiveProcessRunning()
-                    && strncmp(g_titleid, "main", 4) != 0)
-                goto PROCEVENT_UNLOCK_EXIT;
+	switch (ev) {
+	case 1: // startup
+	case 5: // resume
+		// Ignore startup events if exclusive proc is already running
+		if (ksceAppMgrIsExclusiveProcessRunning()
+			&& strncmp(g_titleid, "main", 4) != 0)
+			goto PROCEVENT_UNLOCK_EXIT;
 
-            // Check if pid is PspEmu
-            SceKernelModuleInfo info;
-            info.size = sizeof(SceKernelModuleInfo);
-            _ksceKernelGetModuleInfo(pid, _ksceKernelGetProcessMainModule(pid), &info);
-            if (!strncmp(info.module_name, "ScePspemu", 9)) {
-                g_is_in_pspemu = true;
-                snprintf(titleid, sizeof(titleid), "ScePspemu");
-                break;
-            }
+		// Check if pid is PspEmu
+		SceKernelModuleInfo info;
+		info.size = sizeof(SceKernelModuleInfo);
+		_ksceKernelGetModuleInfo(pid, _ksceKernelGetProcessMainModule(pid), &info);
+		if (!strncmp(info.module_name, "ScePspemu", 9)) {
+			g_is_in_pspemu = true;
+			snprintf(titleid, sizeof(titleid), "ScePspemu");
+			break;
+		}
 
-            // Check titleid
-            ksceKernelGetProcessTitleId(pid, titleid, sizeof(titleid));
-            if (!strncmp(titleid, "NPXS", 4))
-                goto PROCEVENT_UNLOCK_EXIT;
+		// Check titleid
+		ksceKernelGetProcessTitleId(pid, titleid, sizeof(titleid));
+		break;
 
-            break;
+	case 3: // exit
+	case 4: // suspend
+		g_sysroot_cas_shift = 0;
+		g_is_in_pspemu = false;
+		snprintf(titleid, sizeof(titleid), "main");
+		break;
+	}
 
-        case 3: // exit
-        case 4: // suspend
-            // Check titleid
-            ksceKernelGetProcessTitleId(pid, titleid, sizeof(titleid));
-            if (!strncmp(titleid, "NPXS", 4))
-                goto PROCEVENT_UNLOCK_EXIT;
+	if (ev == 1 || ev == 5 || ev == 3 || ev == 4) {
+		if (strncmp(g_titleid, titleid, sizeof(g_titleid))) {
+			strncpy(g_titleid, titleid, sizeof(g_titleid));
 
-            g_is_in_pspemu = false;
-            snprintf(titleid, sizeof(titleid), "main");
-            break;
-    }
+			// Set current pid
+			g_pid = (ev == 1 || ev == 5) ? pid : INVALID_PID;
 
-    if (ev == 1 || ev == 5 || ev == 3 || ev == 4) {
-        if (strncmp(g_titleid, titleid, sizeof(g_titleid))) {
-            strncpy(g_titleid, titleid, sizeof(g_titleid));
-
-            // Set current pid
-            g_pid = (ev == 1 || ev == 5) ? pid : INVALID_PID;
-
-            // Load profile if app changed
-            if (g_is_in_pspemu || !psvs_profile_load()) {
-                // If no profile exists or in PspEmu,
-                // reset all options to default
-                psvs_oc_init();
-            }
-        }
-    }
+			// Load profile if app changed
+			if (g_is_in_pspemu || !psvs_profile_load()) {
+				// If no profile exists or in PspEmu,
+				// reset all options to default
+				psvs_oc_init();
+			}
+		}
+	}
 
 PROCEVENT_UNLOCK_EXIT:
-    ksceKernelUnlockMutex(g_mutex_procevent_uid, 1);
+	ksceKernelUnlockMutex(g_mutex_procevent_uid, 1);
 
 PROCEVENT_EXIT:
-    return TAI_CONTINUE(int, g_hookrefs[13], pid, ev, a3, a4, a5, a6);
+	return TAI_CONTINUE(int, g_hookrefs[13], pid, ev, a3, a4, a5, a6);
 }
 
 static int psvs_thread(SceSize args, void *argp) {
@@ -224,7 +217,7 @@ static int psvs_thread(SceSize args, void *argp) {
             psvs_gui_input_check(kctrl.buttons);
 
         bool fb_or_mode_changed = psvs_gui_mode_changed() || psvs_gui_fb_res_changed();
-        psvs_gui_mode_t mode = psvs_gui_get_mode();
+		psvs_gui_mode_t mode = psvs_gui_get_mode();
 
         // If in OSD/FULL mode, poll shown info
         if (mode == PSVS_GUI_MODE_OSD || mode == PSVS_GUI_MODE_FULL) {

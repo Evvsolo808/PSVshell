@@ -3,7 +3,7 @@
 
 // scaling done internally
 #define GUI_WIDTH  308
-#define GUI_HEIGHT 344
+#define GUI_HEIGHT 395
 
 #define GUI_OSD_HEIGHT 64
 
